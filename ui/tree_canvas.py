@@ -9,11 +9,11 @@ class ParseTreeCanvas(tk.Canvas):
         self.level_height = 80
         self.node_spacing = 60
         self.colors = {
-            'non_terminal': '#5e81ac', # Using Nord colors
-            'terminal': '#a3be8c',
-            'epsilon': '#d08770',
-            'text': '#eceff4',
-            'line': '#4c566a'
+            'non_terminal': '#1976d2', # blue
+            'terminal': '#43a047',    # green
+            'epsilon': '#fbc02d',     # orange
+            'text': '#111111',        # black for text
+            'line': '#888888'         # dark gray for lines
         }
         self.bind('<Button-1>', self.on_click)
         self.bind('<B1-Motion>', self.on_drag)

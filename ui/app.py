@@ -14,9 +14,15 @@ class ParserApp(tk.Tk):
 
         # --- Nord Theme Setup ---
         self.colors = {
-            'background': '#2e3440', 'card': '#3b4252', 'primary': '#5e81ac',
-            'accent': '#88c0d0', 'success': '#a3be8c', 'error': '#bf616a',
-            'text': '#eceff4', 'text_secondary': '#d8dee9', 'border': '#4c566a',
+            'background': '#f7fafc',  # very light blue/gray
+            'card': '#ffffff',       # white
+            'primary': '#1976d2',    # deep blue
+            'accent': '#26c6da',     # teal accent
+            'success': '#43a047',    # green
+            'error': '#e53935',      # red
+            'text': '#222b45',       # dark gray for main text
+            'text_secondary': '#6b7280', # medium gray for secondary text
+            'border': '#e0e0e0',     # light gray for borders
         }
         self.fonts = {
             'heading': font.Font(family="Segoe UI", size=16, weight="bold"),
@@ -53,7 +59,7 @@ class ParserApp(tk.Tk):
         # Notebook tabs
         style.configure("TNotebook", background=self.colors['background'], borderwidth=0)
         style.configure("TNotebook.Tab", background=self.colors['card'], foreground=self.colors['text_secondary'], padding=[10, 5], font=self.fonts['body'])
-        style.map("TNotebook.Tab", background=[("selected", self.colors['primary'])], foreground=[("selected", self.colors['text'])])
+        style.map("TNotebook.Tab", background=[("selected", self.colors['primary'])], foreground=[("selected", self.colors['card'])])
         # Treeview (for steps and table)
         style.configure("Treeview", background=self.colors['card'], fieldbackground=self.colors['card'], foreground=self.colors['text'], rowheight=25, borderwidth=0)
         style.map('Treeview', background=[('selected', self.colors['primary'])])
@@ -118,8 +124,18 @@ class ParserApp(tk.Tk):
         tk.Label(top_frame, text="Input String:", font=self.fonts['body'], bg=self.colors['card'], fg=self.colors['text']).pack(side='left', padx=(0, 8))
         self.input_entry = tk.Entry(top_frame, font=self.fonts['body'], width=40, bg=self.colors['background'], fg=self.colors['text'], insertbackground=self.colors['text'], relief=tk.FLAT)
         self.input_entry.pack(side='left', padx=(0, 8), expand=True, fill='x')
-        self.parse_btn = tk.Button(top_frame, text="Parse", font=self.fonts['body'], command=self.on_parse, bg=self.colors['primary'], fg=self.colors['text'], activebackground=self.colors['accent'], activeforeground=self.colors['background'], relief=tk.FLAT, padx=10)
+        self.parse_btn = tk.Button(top_frame, text="Parse", font=self.fonts['body'], command=self.on_parse, bg=self.colors['primary'], fg='#000000', activebackground=self.colors['accent'], activeforeground='#000000', relief=tk.FLAT, padx=10)
         self.parse_btn.pack(side='left')
+        
+        # Animation controls
+        self.prev_btn = tk.Button(top_frame, text="⟨ Prev", font=self.fonts['body'], command=self.on_prev_step, bg='#222b45', fg='#000000', relief=tk.FLAT, padx=8)
+        self.prev_btn.pack(side='left', padx=(8,0))
+        self.next_btn = tk.Button(top_frame, text="Next ⟩", font=self.fonts['body'], command=self.on_next_step, bg='#222b45', fg='#000000', relief=tk.FLAT, padx=8)
+        self.next_btn.pack(side='left', padx=(2,0))
+        self.play_btn = tk.Button(top_frame, text="▶ Play", font=self.fonts['body'], command=self.on_play, bg=self.colors['primary'], fg='#000000', relief=tk.FLAT, padx=8)
+        self.play_btn.pack(side='left', padx=(8,0))
+        self.pause_btn = tk.Button(top_frame, text="⏸ Pause", font=self.fonts['body'], command=self.on_pause, bg=self.colors['error'], fg='#000000', relief=tk.FLAT, padx=8)
+        self.pause_btn.pack(side='left', padx=(2,0))
         
         self.result_label = tk.Label(parent, text="", font=self.fonts['subheading'], bg=self.colors['card'], fg=self.colors['text'])
         self.result_label.pack(pady=5, padx=10, fill='x')
@@ -140,21 +156,68 @@ class ParserApp(tk.Tk):
         self.tree_canvas.pack(fill='both', expand=True)
         content_pane.add(tree_view_frame, weight=2)
 
+        # Animation state
+        self.all_steps = []  # List of (step, stack, input, action, tree_snapshot)
+        self.current_step_index = 0
+        self.is_animating = False
+
     def on_parse(self):
         self.steps_tree.delete(*self.steps_tree.get_children())
         self.result_label.config(text="")
         self.tree_canvas.set_tree(None)
-        
+        self.all_steps = []
+        self.current_step_index = 0
+        self.is_animating = False
         input_str = self.input_entry.get().strip()
         if not input_str:
             self.result_label.config(text="Please enter a string to parse.", fg=self.colors['error'])
             return
-
+        # Collect all steps and tree states
+        step_records = []
+        tree_snapshots = []
         def step_callback(step, stack, input_val, action):
+            # Deepcopy tree for snapshot
+            import copy
+            tree_snapshots.append(copy.deepcopy(self.parser.parse_tree))
+            step_records.append((step, stack, input_val, action))
+        result = self.parser.parse(input_str, step_callback=step_callback, tree_callback=None)
+        # Pair steps and tree snapshots
+        self.all_steps = [(s[0], s[1], s[2], s[3], t) for s, t in zip(step_records, tree_snapshots)]
+        self.current_step_index = 0
+        self.show_step(0)
+        if result:
+            self.result_label.config(text="✓ Accepted", fg=self.colors['success'])
+        else:
+            self.result_label.config(text="✗ Rejected", fg=self.colors['error'])
+
+    def show_step(self, idx):
+        if not self.all_steps:
+            return
+        idx = max(0, min(idx, len(self.all_steps)-1))
+        self.current_step_index = idx
+        # Clear and show only up to this step
+        self.steps_tree.delete(*self.steps_tree.get_children())
+        for i in range(idx+1):
+            step, stack, input_val, action, _ = self.all_steps[i]
             self.steps_tree.insert("", "end", values=(step, stack, input_val, action))
-            self.steps_tree.yview_moveto(1)
-        
-        result = self.parser.parse(input_str, step_callback=step_callback, tree_callback=self.tree_canvas.set_tree)
-        
-        if result: self.result_label.config(text="✓ Accepted", fg=self.colors['success'])
-        else: self.result_label.config(text="✗ Rejected", fg=self.colors['error'])
+        # Show tree for this step
+        _, _, _, _, tree_snapshot = self.all_steps[idx]
+        self.tree_canvas.set_tree(tree_snapshot)
+
+    def on_next_step(self):
+        if self.current_step_index < len(self.all_steps) - 1:
+            self.show_step(self.current_step_index + 1)
+    def on_prev_step(self):
+        if self.current_step_index > 0:
+            self.show_step(self.current_step_index - 1)
+    def on_play(self):
+        self.is_animating = True
+        self._animate_step()
+    def on_pause(self):
+        self.is_animating = False
+    def _animate_step(self):
+        if self.is_animating and self.current_step_index < len(self.all_steps) - 1:
+            self.show_step(self.current_step_index + 1)
+            self.after(700, self._animate_step)  # 700ms delay per step
+        else:
+            self.is_animating = False
